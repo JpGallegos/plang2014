@@ -340,8 +340,26 @@ end
 fun desugar(e :: ExprP) -> ExprC:
   doc: "Desugar the expression E, return the equivalent in the core language."
   cases (ExprP) e:
-    | NumP(n) => NumC(n)
-    | TrueP => TrueC
+    | ObjectP(fields) => 
+      desugared-fields = for map(f from fields):
+        fieldC(f.name, desugar(f.value))
+      end
+      ObjectC(desugared-fields)
+
+    | FuncP(args, body) => FuncC(args, desugar(body))
+    | AppP(func, args) =>
+      arguments = for map(a from args):
+        desugar(a)
+      end
+      AppC(desugar(func), arguments)
+    | DefVarP(id, bnd, body) => LetC(id, desugar(bnd), desugar(body))
+    | DeffunP(name, ids, funcbody, body) => LetC(name, FuncC(ids, desugar(funcbody)), desugar(body))
+    | IdP(name) => IdC(name)
+
+    | GetfieldP(obj, field) => GetFieldC(desugar(obj), desugar(field))
+    | SetfieldP(obj, field, newval) => SetFieldC(desugar(obj), desugar(field), desugar(newval))
+    | SetvarP(id, val) => Set!C(id, desugar(val))
+
     | WhileP(test, body) =>
       dummy-fun = FuncC([], ErrorC(StrC("Dummy function")))
       IfC( desugar(test),
@@ -363,6 +381,27 @@ fun desugar(e :: ExprP) -> ExprC:
            SeqC(SetC( "while-var", IdC( "while-func")),
               AppC(IdC("while-var"), [])))),
        FalseC)
+    | ForP(init, test, update, body) => raise("")
+    
+    | SeqP(es) => raise("")
+    | IfP(cond, thn, els) => IfC(desugar(cond), desugar(thn), desugar(els))
+
+    | NumP(n) => NumC(n)
+    | StrP(s) => StrC(s)
+    | TrueP => TrueC
+    | FalseP => FalseC
+
+    # An op is one of "'+', '-', '==', 'print', '<', '>'"
+    | PrimP(op, args) => 
+      if op == "print":
+        if args.length() == 1:
+          #
+        else:
+          ErrorC()
+        end
+      else:
+        #
+      end
   end
 where:
   fun run(s): desugar(parse(read-sexpr(s))) end
