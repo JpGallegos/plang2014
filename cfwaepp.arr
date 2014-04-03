@@ -353,13 +353,14 @@ fun desugar(e :: ExprP) -> ExprC:
       ObjectC(desugared-fields)
 
     | FuncP(args, body) => FuncC(args, desugar(body))
-    | AppP(func, args) =>
-      arguments = for map(a from args):
-        desugar(a)
-      end
-      AppC(desugar(func), arguments)
+    | AppP(func, args-actual) => AppC(desugar(func), map(desugar, args-actual))
     | DefVarP(id, bnd, body) => LetC(id, desugar(bnd), desugar(body))
-    | DeffunP(name, ids, funcbody, body) => LetC(name, FuncC(ids, desugar(funcbody)), desugar(body))
+    | DeffunP(name, ids, funcbody, body) => 
+      dummy-fun = FuncC([], ErrorC(StrC("dummy function")))
+      LetC(name, dummy-fun,
+           SeqC(SetC(name, 
+                     FuncC(ids, desugar(funcbody)), 
+                     desugar(body))))  # Chapter 17: Recursion
     | IdP(name) => IdC(name)
 
     | GetfieldP(obj, field) => GetFieldC(desugar(obj), desugar(field))
@@ -400,15 +401,13 @@ fun desugar(e :: ExprP) -> ExprC:
               # return init-var
       can-do = desugar(test)
       dummy-fun = FuncC([], ErrorC(StrC("Dummy function")))
-      LetC("init-var", desugar(init),      # 1) Evaluate init to a value v
-            IfC(can-do,                    # 2) Evaluate test to a value v2 
-                LetC("for-var", dummy-fun, # 3 a) If v2 is true:
+      LetC("init-var", desugar(init),      
+            IfC(can-do,                    
+                LetC("for-var", dummy-fun, 
                      LetC("for-func", 
                           FuncC([], 
-                                LetC("temp-body", 
-                                     desugar(body), 
-                                     LetC("temp-update", 
-                                          desugar(update), 
+                                LetC("temp-body", desugar(body), 
+                                     LetC("temp-update", desugar(update), 
                                           IfC(can-do, 
                                               AppC(IdC("for-var"), []), 
                                               IdC("temp-body"))))), 
