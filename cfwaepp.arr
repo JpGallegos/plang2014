@@ -1,8 +1,7 @@
 #lang pyret/check
 
-# cfwaepp.arr - Interpreter for CFWAE++
+# cfwaepp-template.arr - Template of a interpreter for CFWAE++
 # Copyright (C) 2014 - Humberto Ortiz-Zuazaga <humberto.ortiz@upr.edu>
-#                      John P. (Jp) Gallegos <sylladie@gmail.com>
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -103,7 +102,6 @@ data ValueC:
   | ObjectV (fields :: List<FieldV>)
 end
 
-# Code: Humberto Ortiz
 fun pretty-value(v :: ValueC) -> String:
   cases (ValueC) v:
     | ObjectV(_) => "object"
@@ -128,15 +126,15 @@ mt-sto = []
 xtnd-sto = link
 
 data Result:
-  | ret (value :: ValueC, store :: List<Cell>)
+  | v-x-s (value :: ValueC, store :: List<Cell>)
 end
 
 binops = ["+", "-", "==", "<", ">"]
 keywords = ['if', 'fun', 'true', 'false', 'defvar', 'deffun', 'obj', 'getfield', 'setfield', 'setvar', 'begin', 'while', 'print', 'for']
 
-# Code: Humberto Ortiz
+
 fun parse-formals(s, illegals) -> List<String>:
-  doc: "Read a list of identifiers S and construct a list of Strings."
+  doc: "Read a list of identifiers S and construct a list of Strings"
   if List(s):
     cases (List) s:
       | empty => empty
@@ -154,9 +152,7 @@ where:
   parse-formals(["x", "y"], keywords) is ["x", "y"]
 end
 
-# Code: Humberto Ortiz
 fun parse-fields(lof) -> List<FieldP>:
-  doc: "Code by Humerto Ortiz."
   for map(field from lof):
     name = field.first
     val = parse(list.index(field, 1))
@@ -164,7 +160,6 @@ fun parse-fields(lof) -> List<FieldP>:
   end
 end
 
-# Code: Humberto Ortiz
 fun parse(s) -> ExprP:
   doc: "Parse reads an s-expression S and returns the abstract syntax tree."
   if Number(s):
@@ -342,7 +337,6 @@ where:
   p("(deffun (id x) x (id 3))") is DeffunP("id", ["x"], IdP('x'), AppP(IdP("id"), [NumP(3)])) 
 end
 
-# Code: Jp Gallegos
 fun desugar(e :: ExprP) -> ExprC:
   doc: "Desugar the expression E, return the equivalent in the core language."
   cases (ExprP) e:
@@ -364,9 +358,8 @@ fun desugar(e :: ExprP) -> ExprC:
 
     | GetfieldP(obj, field) => GetFieldC(desugar(obj), desugar(field))
     | SetfieldP(obj, field, newval) => SetFieldC(desugar(obj), desugar(field), desugar(newval))
-    | SetvarP(id, val) => SetC(id, desugar(val))
+    | SetvarP(id, val) => Set!C(id, desugar(val))
 
-    # Code: Humberto Ortiz
     | WhileP(test, body) =>
       dummy-fun = FuncC([], ErrorC(StrC("Dummy function")))
       IfC( desugar(test),
@@ -388,29 +381,7 @@ fun desugar(e :: ExprP) -> ExprC:
            SeqC(SetC( "while-var", IdC( "while-func")),
               AppC(IdC("while-var"), [])))),
        FalseC)
-    # End code by Humberto Ortiz
-    | ForP(init, test, update, body) => 
-      # Python:
-      # with desugar(init) as init_var:
-          # if desugar(test):
-              # with lambda: raises("Dummy fun") as for_var:
-                  # def for_func():
-                  #   
-          # else:
-              # return init-var
-      can-do = desugar(test)
-      dummy-fun = FuncC([], ErrorC(StrC("Dummy function")))
-      LetC("init-var", desugar(init),      # 1) Evaluate init to a value v
-            IfC(can-do,                    # 2) Evaluate test to a value v2 
-                LetC("for-var", dummy-fun, # 3 a) If v2 is true:
-                     LetC("for-func", 
-                          FuncC([], 
-                                LetC("temp-body", 
-                                     desugar(body), 
-                                     LetC("temp"))), 
-                          SeqC(SetC("for-var", IdC("for-fun"), 
-                               AppC(IdC("for-var"), []))))),
-                IdC("init-var")))          # 3 b) If v2 is false yield v as the result for the whole expression
+    | ForP(init, test, update, body) => raise("")
     
     | SeqP(es) => create-seq(es)
     | IfP(cond, thn, els) => IfC(desugar(cond), desugar(thn), desugar(els))
@@ -435,8 +406,8 @@ fun desugar(e :: ExprP) -> ExprC:
         arg1 = desugar(list.index(args, 0))
         arg2 = desugar(list.index(args, 1))
         IfC(Prim2C("==", Prim1C("tagof", arg1), Prim1C("tagof", arg2)),                                # if tagof(ar1) == tagof(arg2):
-                                                                                                           #(Note: If tagof(arg1) == tagof(arg2) and tagof(arg1) == Some-type-value
-                                                                                                           # then tagof(arg2) == some-type-value)
+                                                                                                           #(If tagof(arg1) == tagof(arg2) and tagof(arg1) == Some-type-value
+                                                                                                           # then tagof(arg2) == some-type-value
             IfC(Prim2C("==", Prim1C("tagof", arg1), StrC("string")),                                     # if tagof(arg1) == "string":
                 IfC(Prim2C("==", StrC(op), StrC("+")),                                                     #if op == "+":
                     Prim2C("num+", arg1, arg2),                                                              # Prim2C("string+", desugar(arg1), desugar(arg2))
@@ -463,18 +434,17 @@ end
 
 
 # Templates for interpreter: fix interp-full
-# Code: Jp Gallegos, Humberto Ortiz
+
 fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Result:
   cases (ExprC) expr:
-    | NumC (n) => ret(NumV(n), store)
+    | NumC (n) => v-x-s(NumV(n), store)
     | else => interp-error("Haven't covered a case yet:".append(torepr(expr)))
   end
 end
 
-# Code: Humberto Ortiz
 fun interp(expr :: ExprC) -> ValueC:
   cases (Result) interp-full(expr, mt-env, mt-sto):
-    | ret (value, store) => value
+    | v-x-s (value, store) => value
   end
 end
 
@@ -483,7 +453,6 @@ check:
 end
 
 # Auxiliary functions
-# Code: Jp Gallegos
 fun create-seq(es :: List<ExprP>) -> ExprC:
   cases (List<ExprP>) es:
     | empty => ErrorC(StrC("create-seq: malformed SeqP"))
