@@ -469,8 +469,34 @@ end
 # Code: Jp Gallegos, Humberto Ortiz
 fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Result:
   cases (ExprC) expr:
+    # Primitives
     | NumC (n) => ret(NumV(n), store)
-    | else => interp-error("Haven't covered a case yet:".append(torepr(expr)))
+    | TrueC => ret(TrueV, store)
+    | FalseC => ret(FalseV, store)
+    | StrC(s) => ret(StrV(s), store)
+
+    # Objects
+    | ObjectC(fields) => raise("Not implemented")
+    | GetFieldC(obj, field) => raise("Not implemented")
+    | SetFieldC(obj, field, value) => raise("Not implemented")
+
+    # Functions
+    | FuncC(args, body) => raise("Not implemented")
+    | AppC(func, args) => raise("Not implemented")
+    | LetC(id, bnd, body) => raise("Not implemented")
+    | IdC(id) => raise("Not implemented")
+    | SetC(e1, e2) => raise("Not implemented")
+    
+    # Error
+    | ErrorC(e) => raise("Not implemented")
+
+    # Control Structures
+    | IfC(cond, thn, els) => raise("Not implemented")
+    | SeqC(e1, e2) => raise("Not implemented")
+
+    # Core operations
+    | Prim1C(op, arg) => raise("Not implemented")
+    | Prim2C(op, arg1, arg2) => raise("Not implemented")
   end
 end
 
@@ -483,6 +509,9 @@ end
 
 check:
   interp(NumC(5)) is NumV(5)
+  interp(TrueC) is TrueV
+  interp(FalseC) is FalseV
+  interp(StrC("Hi!")) is StrV("Hi!")
 end
 
 # Auxiliary functions
