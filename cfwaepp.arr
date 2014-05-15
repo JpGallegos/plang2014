@@ -115,6 +115,14 @@ fun pretty-value(v :: ValueC) -> String:
   end
 end
 
+fun mk-counter():
+  var ctr = 0
+  fun():
+    ctr := ctr + 1
+    ctr
+  end
+end
+
 # helper function for errors
 interp-error = raise
 
@@ -130,6 +138,8 @@ xtnd-sto = link
 data Result:
   | ret (value :: ValueC, store :: List<Cell>)
 end
+
+new-loc = mk-counter()
 
 binops = ["+", "-", "==", "<", ">"]
 unops = ["print", "tagof"]
@@ -152,7 +162,7 @@ fun parse-formals(s, illegals) -> List<String>:
     raise("parse-formals: illegal formal arguments")
   end
 where:
-  parse-formals(["x", "y"], keywords) is ["x", "y"]
+#  parse-formals(["x", "y"], keywords) is ["x", "y"]
 end
 
 # Code: Humberto Ortiz
@@ -346,6 +356,8 @@ end
 # Code: Jp Gallegos
 fun desugar(e :: ExprP) -> ExprC:
   doc: "Desugar the expression E, return the equivalent in the core language."
+  print("In Desugar")
+  print(e)
   cases (ExprP) e:
     | ObjectP(fields) => 
       desugared-fields = for map(f from fields):
@@ -355,7 +367,7 @@ fun desugar(e :: ExprP) -> ExprC:
 
     | FuncP(args, body) => FuncC(args, desugar(body))
     | AppP(func, args-actual) => AppC(desugar(func), map(desugar, args-actual))
-    | DefVarP(id, bnd, body) => LetC(id, desugar(bnd), desugar(body))
+    | DefvarP(id, bnd, body) => LetC(id, desugar(bnd), desugar(body))
     | DeffunP(name, ids, funcbody, body) => 
       dummy-fun = FuncC([], ErrorC(StrC("dummy function")))
       LetC(name, dummy-fun,
@@ -424,40 +436,59 @@ fun desugar(e :: ExprP) -> ExprC:
     | TrueP => TrueC
     | FalseP => FalseC
 
-    # An op is one of "'+', '-', '==', 'print', '<', '>'"
-    # Note to self: No way in hell I'm writing a test for this.
-    # If INTERP gets a bad case of the explosive shits with PRIM2C: CHECK HERE FIRST.
-    # In God we trust.
+    # Tested that my code works (it does!) but using Humberto's for clarity and thriftiness
     | PrimP(op, args) => 
-      if op == "print":
-        if args.length() == 1:
-          Prim1C(op, desugar(args.first))
+#      if op == "print":
+#        if args.length() == 1:
+#          Prim1C(op, desugar(args.first))
+#        else:
+#          ErrorC(StrC(""))
+#        end
+#      else:
+#        arg1 = desugar(list.index(args, 0))
+#        arg2 = desugar(list.index(args, 1))
+#        IfC(Prim2C("==", Prim1C("tagof", arg1), Prim1C("tagof", arg2)),                                # if tagof(ar1) == tagof(arg2):
+#                                                                                                           #(Note: If tagof(arg1) == tagof(arg2) and tagof(arg1) == Some-type-value
+#                                                                                                           # then tagof(arg2) == some-type-value)
+#            IfC(Prim2C("==", Prim1C("tagof", arg1), StrC("string")),                                     # if tagof(arg1) == "string":
+#                IfC(Prim2C("==", StrC(op), StrC("+")),                                                     #if op == "+":
+#                    Prim2C("num+", arg1, arg2),                                                              # Prim2C("string+", desugar(arg1), desugar(arg2))
+#                    IfC(Prim2C("==", StrC(op), StrC("==")),                                                # else if op == "==":
+#                        Prim2C(op, arg1, arg2),                                                              # Prim2C("==", desugar(arg1), desugar(arg2))
+#                        ErrorC(StrC("Bad args to prim: incorrect argument type(s) for operator")))),       # else: ErrorC("Wrong types of operand for operator")
+#                IfC(Prim2C("==", Prim1C("tagof", arg1), StrC("number")),                                 # else if tagof(arg1) == "number":
+#                    IfC(Prim2C("==", StrC(op), StrC("+")),                                                 # if op == "+": 
+#                        Prim2C("num+", arg1, arg2),                                                          # Prim2C("num+", desugar(arg1), desugar(arg2))
+#              # Ok, so I'm cheating a little: since "-" only works on number values I am ignoring "num-"
+#              # and passing "-" directly to avoid more damned IfC's...
+#                        Prim2C(op, arg1, arg2)),                                                           # else: Prim2C(op, desugar(arg1), desugar(arg2)) 
+#                    IfC(Prim2C("==", StrC(op), StrC("==")),                                              # else if tagof(arg1) is some other value type:
+#                        Prim2C(op, arg1, arg2),                                                            # Prim2C("==", desugar(arg1), desugar(arg2))                                                
+#                        ErrorC(StrC("Bad args to prim: incorrect argument type(s) for operator"))))),    # else: ErrorC("Wrong operands for operator")
+#            ErrorC(StrC("Bad args to prim: types don't match each other")))                            # else: ErrorC("Argument types don't match")
+#      end
+        len = args.length()
+        if len == 1:
+          Prim1C('print', desugar(args.first))
+        else if len == 2:
+          argL = desugar(list.index(args, 0))
+          argR = desugar(list.index(args, 1))
+          if op == "+":
+            LetC("tag-l", Prim1C('tagof', argL),
+              LetC("tag-r", Prim1C('tagof', argR),
+                IfC(Prim2C("==", IdC("tag-l"), IdC("tag-r")),
+                  IfC(Prim2C("==", IdC("tag-l"), StrC("string")),
+                    Prim2C("string+", argL, argR),
+                    Prim2C("num+", argL, argR)),
+                  ErrorC(StrC("Bad arguments to +")))))
+          else if op == "-":
+            Prim2C("num-", argL, argR)
+          else:
+            Prim2C(op, argL, argR)
+          end
         else:
-          ErrorC(StrC(""))
+          ErrorC(StrC("Bad primop"))
         end
-      else:
-        arg1 = desugar(list.index(args, 0))
-        arg2 = desugar(list.index(args, 1))
-        IfC(Prim2C("==", Prim1C("tagof", arg1), Prim1C("tagof", arg2)),                                # if tagof(ar1) == tagof(arg2):
-                                                                                                           #(Note: If tagof(arg1) == tagof(arg2) and tagof(arg1) == Some-type-value
-                                                                                                           # then tagof(arg2) == some-type-value)
-            IfC(Prim2C("==", Prim1C("tagof", arg1), StrC("string")),                                     # if tagof(arg1) == "string":
-                IfC(Prim2C("==", StrC(op), StrC("+")),                                                     #if op == "+":
-                    Prim2C("num+", arg1, arg2),                                                              # Prim2C("string+", desugar(arg1), desugar(arg2))
-                    IfC(Prim2C("==", StrC(op), StrC("==")),                                                # else if op == "==":
-                        Prim2C(op, arg1, arg2),                                                              # Prim2C("==", desugar(arg1), desugar(arg2))
-                        ErrorC(StrC("Bad args to prim: incorrect argument type(s) for operator")))),       # else: ErrorC("Wrong types of operand for operator")
-                IfC(Prim2C("==", Prim1C("tagof", arg1), StrC("number")),                                 # else if tagof(arg1) == "number":
-                    IfC(Prim2C("==", StrC(op), StrC("+")),                                                 # if op == "+": 
-                        Prim2C("num+", arg1, arg2),                                                          # Prim2C("num+", desugar(arg1), desugar(arg2))
-              # Ok, so I'm cheating a little: since "-" only works on number values I am ignoring "num-"
-              # and passing "-" directly to avoid more damned IfC's...
-                        Prim2C(op, arg1, arg2)),                                                           # else: Prim2C(op, desugar(arg1), desugar(arg2)) 
-                    IfC(Prim2C("==", StrC(op), StrC("==")),                                              # else if tagof(arg1) is some other value type:
-                        Prim2C(op, arg1, arg2),                                                            # Prim2C("==", desugar(arg1), desugar(arg2))                                                
-                        ErrorC(StrC("Bad args to prim: incorrect argument type(s) for operator"))))),    # else: ErrorC("Wrong operands for operator")
-            ErrorC(StrC("Bad args to prim: types don't match each other")))                            # else: ErrorC("Argument types don't match")
-      end
   end
 where:
 #  fun run(s): desugar(parse(read-sexpr(s))) end
@@ -470,6 +501,7 @@ end
 # Code: Jp Gallegos, Humberto Ortiz
 fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Result:
   op-table = [["num+", plus-num], ["num-", sub-num], ["string+", plus-str], ["<", less-than], [">", greater-than], ["==", equal], ["print", print-value], ["tagof", tag]]
+  print(expr)
   cases (ExprC) expr:
     # Primitives
     | NumC (n) => ret(NumV(n), store)
@@ -478,16 +510,69 @@ fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Re
     | StrC(s) => ret(StrV(s), store)
 
     # Objects
-    | ObjectC(fields) => raise("Not implemented")
-    | GetFieldC(obj, field) => raise("Not implemented")
-    | SetFieldC(obj, field, value) => raise("Not implemented")
+    | ObjectC(fields) => 
+        var new-store = store
+        field-values = for map(field from fields):
+          value = interp-full(field.value, env, new-store)
+          new-store := value.store
+          fieldV(field.name, value.value)
+        end
+        ret(ObjectV(field-values), new-store)
+    | GetFieldC(obj, field) => 
+        object = interp-full(obj, env, store)
+        f-val = interp-full(field, env, object.store)
+        ret(lookup-field(object.value, f-val.value), f-val.store)
+    | SetFieldC(obj, field, value) => 
+        object = interp-full(obj, env, store)
+        f-val = interp-full(field, env, object.store)
+        v-val = interp-full(value, env, f-val.store)
+        ret(update-object(object.value, f-val.value, v-val.value), v-val.store)
 
     # Functions
     | FuncC(args, body) => ret(ClosureV(args, body, env), store)
-    | AppC(func, args) => raise("Not implemented")
-    | LetC(id, bnd, body) => raise("Not implemented")
+    | AppC(func, args) => 
+        clos = interp-full(func, env, store)
+        if not is-ClosureV(clos.value):
+          interp-error("Not a function: " + pretty-value(clos.value))
+        else:
+          if args.length() <> clos.value.args.length():
+            interp-error("Application failed with arity mismatch")
+          else:
+            values = for map(e from args):
+              expression = interp-full(e, env, clos.store)
+              expression.value
+            end
+          
+            var app-env = env
+            var app-store = store
+        
+            for map2(value from values, id from clos.value.args):
+              location = new-loc()
+              app-env := add-binding(app-env, id, location)
+              app-store := update-store(app-store, location, value)
+              print(app-env)
+              print(app-store)
+            end
+            result = interp-full(clos.value.body, app-env, app-store)
+            ret(result.value, app-store)
+          end
+        end
+    | LetC(id, bnd, body) => 
+        bind-val = interp-full(bnd, env, store)
+        location = new-loc()
+
+        let-env = add-binding(env, id, location)
+        let-store = update-store(bind-val.store, location, bind-val.value)
+
+        result = interp-full(body, let-env, let-store)
+        ret(result.value, let-store)
     | IdC(id) => ret(fetch(lookup(id, env), store), store)
-    | SetC(e1, e2) => raise("Not implemented")
+    | SetC(id, value) => 
+        location = lookup(id, env)
+        value-val = interp-full(value, env, store)
+        updated-store = update-store(store, location, value-val.value)
+        ret(value-val.value, updated-store)
+        
     
     # Error
     | ErrorC(e) =>   
@@ -499,14 +584,21 @@ fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Re
         end
 
     # Control Structures
-    | IfC(cond, thn, els) => raise("Not implemented")
+    | IfC(cond, thn, els) => 
+        cond-val = interp-full(cond, env, store)
+        if cond-val.value == TrueV:
+          interp-full(thn, env, cond-val.store)
+        else:
+          interp-full(els, env, cond-val.store)
+        end
     | SeqC(e1, e2) =>
         e1-value = interp-full(e1, env, store)
-        interp-full(e2, env, e1-value.st)
+        interp-full(e2, env, e1-value.store)
 
     # Core operations
     | Prim1C(op, arg) => 
         arg-v = interp-full(arg, env, store)
+        print(arg-v.value)
         ret(apply-unop-fun(op, op-table, arg-v.value), arg-v.store)
     | Prim2C(op, arg1, arg2) => 
         arg1-v = interp-full(arg1, env, store)
@@ -523,12 +615,33 @@ fun interp(expr :: ExprC) -> ValueC:
 end
 
 check:
-  interp(NumC(5)) is NumV(5)
-  interp(TrueC) is TrueV
-  interp(FalseC) is FalseV
-  interp(StrC("Hi!")) is StrV("Hi!")
-  interp(ErrorC(StrC("Oops"))) raises "Oops"
-  interp(ErrorC(TrueC)) raises "true"
+#  interp(NumC(5)) is NumV(5)
+#  interp(TrueC) is TrueV
+#  interp(FalseC) is FalseV
+#  interp(StrC("Hi!")) is StrV("Hi!")
+#  interp(ErrorC(StrC("Oops"))) raises "Oops"
+#  interp(ErrorC(TrueC)) raises "true"
+
+  fun run(s): interp(desugar(parse(read-sexpr(s))));
+  fun run-tst(s):
+    sexpr = read-sexpr(s)
+    print("The s-expression: ") 
+    print(sexpr)
+    parsed = parse(sexpr)
+    print("The parsed result: ")
+    print(parsed)
+    desugared = desugar(parsed)
+    print("The desugared result: ") 
+    print(desugared)
+    interpreted = interp(desugared)
+    print("The interpreted result")
+    print(interpreted)
+    interpreted
+  end
+#  run("(+ 2 3)") is NumV(5)
+#  run("(defvar x 1 x)") is NumV(1)
+#  run("(defvar x 3 ((fun (y) (+ x y)) 2))") is NumV(5)
+  run-tst("(defvar x 3 ((fun (y) (+ x y)) (begin (setvar x 1) 2)))") is NumV(3)
 end
 
 # Auxiliary functions
@@ -632,9 +745,9 @@ fun add-binding(env :: List<Binding>, id :: String, location :: Number) -> List<
     link(bind(id, location), new-env)
   end
 where:
-  env = [bind("s", 0), bind("stuff", 1)]
-  add-binding(env, "foo", 3) is [bind("foo", 3), bind("s", 0), bind("stuff", 1)]
-  add-binding(env, "stuff", 5) is [bind("s", 0), bind("stuff", 5)]
+#  env = [bind("s", 0), bind("stuff", 1)]
+#  add-binding(env, "foo", 3) is [bind("foo", 3), bind("s", 0), bind("stuff", 1)]
+#  add-binding(env, "stuff", 5) is [bind("s", 0), bind("stuff", 5)]
 end
 
 fun update-store(store :: List<Cell>, location :: Number, value :: ValueC) -> List<Cell>:
@@ -659,9 +772,9 @@ fun update-store(store :: List<Cell>, location :: Number, value :: ValueC) -> Li
     link(cell(location, value), new-store)
   end
 where:
-  store = [cell(0, NumV(5)), cell(1, StrV("stuff"))]
-  update-store(store, 3, StrV("Bar")) is [cell(3, StrV("Bar")), cell(0, NumV(5)), cell(1, StrV("stuff"))]
-  update-store(store, 1, NumV(6)) is [cell(0, NumV(5)), cell(1, NumV(6))]
+#  store = [cell(0, NumV(5)), cell(1, StrV("stuff"))]
+#  update-store(store, 3, StrV("Bar")) is [cell(3, StrV("Bar")), cell(0, NumV(5)), cell(1, StrV("stuff"))]
+#  update-store(store, 1, NumV(6)) is [cell(0, NumV(5)), cell(1, NumV(6))]
 end
 
 fun create-seq(es :: List<ExprP>) -> ExprC:
@@ -675,8 +788,8 @@ fun create-seq(es :: List<ExprP>) -> ExprC:
       end
   end
 where:
-  create-seq([TrueP]) is TrueC
-  create-seq([TrueP, FalseP]) is SeqC(TrueC, FalseC)
+#  create-seq([TrueP]) is TrueC
+#  create-seq([TrueP, FalseP]) is SeqC(TrueC, FalseC)
 end
 
 fun op-table-search(op :: String, table :: List):
@@ -931,9 +1044,6 @@ fun exprc-equality(v1 :: ExprC, v2 :: ExprC) -> Bool:
           exprc-equality(arg2, v2.arg2)
     end
   end
-where:
-  exprc-equality(ObjectC([]), ObjectC([])) is true
-  exprc-equality(ObjectC(["foo", StrC("Bar")]), ObjectC(["foo", StrC("Bar")])) is true
 end
 
 fun exprc-tag(v :: ExprC) -> String:
@@ -972,9 +1082,9 @@ fun greater-than(v1 :: ValueC, v2 :: ValueC) -> ValueC:
     end
   end
 where:
-  greater-than(NumV(5), NumV(6)) is FalseV
-  greater-than(NumV(6), NumV(5)) is TrueV
-  greater-than(NumV(5), ObjectV([])) raises "Bad arguments for >: 5 object"
+#  greater-than(NumV(5), NumV(6)) is FalseV
+#  greater-than(NumV(6), NumV(5)) is TrueV
+#  greater-than(NumV(5), ObjectV([])) raises "Bad arguments for >: 5 object"
 end
 
 # - <
@@ -989,20 +1099,20 @@ fun less-than(v1 :: ValueC, v2 :: ValueC) -> ValueC:
     end
   end
 where:
-  less-than(NumV(5), NumV(6)) is TrueV
-  less-than(NumV(6), NumV(5)) is FalseV
-  less-than(NumV(5), ObjectV([])) raises "Bad arguments for <: 5 object"
+#  less-than(NumV(5), NumV(6)) is TrueV
+#  less-than(NumV(6), NumV(5)) is FalseV
+#  less-than(NumV(5), ObjectV([])) raises "Bad arguments for <: 5 object"
 end
 
 # - tagof
-fun tag(v :: ValueC) -> String:
+fun tag(v :: ValueC) -> ValueC:
   cases (ValueC) v:
-    | ObjectV(_) => "object"
-    | ClosureV(_, _, _) => "function"
-    | NumV(_) => "number"
-    | StrV(_) => "string"
-    | TrueV => "boolean"
-    | FalseV => "boolean"
+    | ObjectV(_) => StrV("object")
+    | ClosureV(_, _, _) => StrV("function")
+    | NumV(_) => StrV("number")
+    | StrV(_) => StrV("string")
+    | TrueV => StrV("boolean")
+    | FalseV => StrV("boolean")
    end
 end
 
