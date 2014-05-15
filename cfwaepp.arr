@@ -356,8 +356,8 @@ end
 # Code: Jp Gallegos
 fun desugar(e :: ExprP) -> ExprC:
   doc: "Desugar the expression E, return the equivalent in the core language."
-  print("In Desugar")
-  print(e)
+#  print("In Desugar")
+#  print(e)
   cases (ExprP) e:
     | ObjectP(fields) => 
       desugared-fields = for map(f from fields):
@@ -424,8 +424,8 @@ fun desugar(e :: ExprP) -> ExprC:
                                           IfC(can-do, 
                                               AppC(IdC("for-var"), []), 
                                               IdC("temp-body"))))), 
-                          SeqC(SetC("for-var", IdC("for-fun"), 
-                               AppC(IdC("for-var"), []))))),
+                          SeqC(SetC("for-var", IdC("for-func")), 
+                               AppC(IdC("for-var"), [])))),
                 IdC("init-var")))          # 3 b) If v2 is false yield v as the result for the whole expression
     
     | SeqP(es) => create-seq(es)
@@ -501,6 +501,7 @@ end
 # Code: Jp Gallegos, Humberto Ortiz
 fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Result:
   op-table = [["num+", plus-num], ["num-", sub-num], ["string+", plus-str], ["<", less-than], [">", greater-than], ["==", equal], ["print", print-value], ["tagof", tag]]
+#  print("In interp-full:")
   print(expr)
   cases (ExprC) expr:
     # Primitives
@@ -538,18 +539,14 @@ fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Re
           if args.length() <> clos.value.args.length():
             interp-error("Application failed with arity mismatch")
           else:
-            values = for map(e from args):
-              expression = interp-full(e, env, clos.store)
-              expression.value
-            end
-          
             var app-env = env
             var app-store = store
         
-            for map2(value from values, id from clos.value.args):
+            for map2(e from args, id from clos.value.args):
+              value = interp-full(e, app-env, app-store)
               location = new-loc()
               app-env := add-binding(app-env, id, location)
-              app-store := update-store(app-store, location, value)
+              app-store := update-store(value.store, location, value.value)
               print(app-env)
               print(app-store)
             end
@@ -598,7 +595,6 @@ fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Re
     # Core operations
     | Prim1C(op, arg) => 
         arg-v = interp-full(arg, env, store)
-        print(arg-v.value)
         ret(apply-unop-fun(op, op-table, arg-v.value), arg-v.store)
     | Prim2C(op, arg1, arg2) => 
         arg1-v = interp-full(arg1, env, store)
@@ -641,7 +637,10 @@ check:
 #  run("(+ 2 3)") is NumV(5)
 #  run("(defvar x 1 x)") is NumV(1)
 #  run("(defvar x 3 ((fun (y) (+ x y)) 2))") is NumV(5)
-  run-tst("(defvar x 3 ((fun (y) (+ x y)) (begin (setvar x 1) 2)))") is NumV(3)
+#  run("(defvar x 3 ((fun (y) (+ x y)) (begin (setvar x 1) 2)))") is NumV(3)
+#  run("(defvar x 100 (for (setvar x 0) (< x 10) (setvar x (+ x 1)) (print x)))") is NumV(9)
+#  run('(defvar o (obj ((x 1) (f (fun (x) (+ x 1))))) (begin (setvar o (setfield o "x" ((getfield o "f") (getfield o "x")))) (getfield o "x")))') is NumV(2)
+  run("(== (fun (x) (+ x 1)) (fun (x) (+ x 1)))") is TrueV
 end
 
 # Auxiliary functions
@@ -887,11 +886,11 @@ fun equal(v1 :: ValueC, v2 :: ValueC) -> ValueC:
           else:
             FalseV
           end
-      | Closure(arg, body, env) => 
-          if (arg.length() <> v2.arg.length()) or (env.length() <> v2.env.length()):
+      | ClosureV(args, body, env) => 
+          if (args.length() <> v2.args.length()) or (env.length() <> v2.env.length()):
             FalseV
           else:
-            if lambda-arg-equality(arg, v2.arg) and lambda-env-equality(env, v2.env) and exprc-equality(body, v2.body):
+            if lambda-arg-equality(args, v2.args) and lambda-env-equality(env, v2.env) and exprc-equality(body, v2.body):
               TrueV
             else:
               FalseV
@@ -932,12 +931,12 @@ end
 fun lambda-arg-equality(v1-args :: List<String>, v2-args :: List<String>) -> Bool:
   if (v1-args == empty) and (v2-args == empty):
     # See object-equality-eval for reasoning
-    TrueV
+    true
   else:
     if (v1-args.first == v1-args.first):
       lambda-arg-equality(v1-args.rest, v2-args.rest)
     else:
-      FalseV
+      false
     end
   end
 end
@@ -945,14 +944,14 @@ end
 fun lambda-env-equality(v1-env :: List<Binding>, v2-env :: List<Binding>) -> Bool:
   if (v1-env == empty) and (v2-env == empty):
     # By now you should probably get where I'm going with this.
-    TrueV
+    true
   else:
     v1-entry = v1-env.first
     v2-entry = v2-env.first
     if (v1-entry.name == v2-entry.name) and (equal(v1-entry.value, v2-entry.value) == TrueV):
       lambda-env-equality(v1-env.rest, v2-env.rest)
     else:
-      FalseV
+      false
     end
   end
 end
@@ -993,10 +992,10 @@ fun exprc-equality(v1 :: ExprC, v2 :: ExprC) -> Bool:
             fieldc-equality(fields, v2.fields)
           end
       | GetFieldC(o, field) =>   
-          exprc-equality(o, v2.o) and 
+          exprc-equality(o, v2.obj) and 
           exprc-equality(field, v2.field)
       | SetFieldC(o, field, value) => 
-          exprc-equality(o, v2.o) and 
+          exprc-equality(o, v2.obj) and 
           exprc-equality(field, v2.field) and 
           exprc-equality(value, v2.value)
     
@@ -1013,7 +1012,7 @@ fun exprc-equality(v1 :: ExprC, v2 :: ExprC) -> Bool:
           
       | LetC(id, bnd, body) => 
           (id == v2.id) and 
-          exprc-equality(bnd, v2.bnd) and 
+          exprc-equality(bnd, v2.bind) and 
           exprc-equality(body, v2.body)
       | IdC(id) => id == v2.id
       | SetC(id, value) => 
@@ -1054,9 +1053,12 @@ fun exprc-tag(v :: ExprC) -> String:
     
     | FuncC(_, _) => "Func"
     | AppC(_, _) => "App"
-    | LetC(_, _) => "Let"
+    | LetC(_, _, _) => "Let"
     | IdC(_) => "IdC"
     | SetC(_, _) => "Set"
+
+    | IfC(_, _, _) => "If"
+    | SeqC(_, _) => "Seq"
 
     | NumC(_) => "Num"
     | StrC(_) => "Str"
