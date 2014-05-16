@@ -501,7 +501,7 @@ end
 # Code: Jp Gallegos, Humberto Ortiz
 fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Result:
   op-table = [["num+", plus-num], ["num-", sub-num], ["string+", plus-str], ["<", less-than], [">", greater-than], ["==", equal], ["print", print-value], ["tagof", tag]]
-#  print("In interp-full:")
+  print("In interp-full:")
   print(expr)
   cases (ExprC) expr:
     # Primitives
@@ -539,16 +539,19 @@ fun interp-full (expr :: ExprC, env :: List<Binding>, store :: List<Cell>) -> Re
           if args.length() <> clos.value.args.length():
             interp-error("Application failed with arity mismatch")
           else:
-            var app-env = env
-            var app-store = store
-        
-            for map2(e from args, id from clos.value.args):
+            var app-env = clos.value.env.append(env)
+            var app-store = clos.store.append(store)
+
+            values = for map(e from args):
               value = interp-full(e, app-env, app-store)
+              app-store := value.store
+              value.value
+            end
+        
+            for map2(v from values, id from clos.value.args):
               location = new-loc()
               app-env := add-binding(app-env, id, location)
-              app-store := update-store(value.store, location, value.value)
-              print(app-env)
-              print(app-store)
+              app-store := update-store(app-store, location, v)
             end
             result = interp-full(clos.value.body, app-env, app-store)
             ret(result.value, app-store)
@@ -639,8 +642,8 @@ check:
 #  run("(defvar x 3 ((fun (y) (+ x y)) 2))") is NumV(5)
 #  run("(defvar x 3 ((fun (y) (+ x y)) (begin (setvar x 1) 2)))") is NumV(3)
 #  run("(defvar x 100 (for (setvar x 0) (< x 10) (setvar x (+ x 1)) (print x)))") is NumV(9)
-#  run('(defvar o (obj ((x 1) (f (fun (x) (+ x 1))))) (begin (setvar o (setfield o "x" ((getfield o "f") (getfield o "x")))) (getfield o "x")))') is NumV(2)
-  run("(== (fun (x) (+ x 1)) (fun (x) (+ x 1)))") is TrueV
+  run('(defvar o (obj ((x 1) (f (fun (x) (+ x 1))))) (begin (setvar o (setfield o "x" ((getfield o "f") (getfield o "x")))) (getfield o "x")))') is NumV(2)
+#  run("(== (fun (x) (+ x 1)) (fun (x) (+ x 1)))") is TrueV
 end
 
 # Auxiliary functions
@@ -658,8 +661,9 @@ fun fetch(n :: Number, st :: List<Cell>) -> ValueC:
 end
 
 fun lookup(s :: String, nv :: List<Binding>) -> Number:
+  print(nv)
   cases (List<Binding>) nv:
-    | empty => raise("Environment: unbound identifier")
+    | empty => raise("Environment: unbound identifier" + " " + s)
     | link(entry, rest) =>
         if s == entry.name:
           entry.value
